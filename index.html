@@ -861,7 +861,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <canvas id="gl" aria-label="3D-weergave van de hole"></canvas>
       <div id="sat" hidden></div>
       <div class="stage-src" id="src"></div>
-      <div class="stage-mode" role="group" aria-label="Weergave"><button data-mode="3d" aria-pressed="true">3D</button><button data-mode="sat" aria-pressed="false">Kaart</button></div>
+      <div class="stage-mode" hidden role="group" aria-label="Weergave"><button data-mode="3d" aria-pressed="true">3D</button><button data-mode="sat" aria-pressed="false">Kaart</button></div>
       <div class="stage-top" id="camTop" role="group" aria-label="Camerastandpunt">
         <button data-cam="tee" aria-pressed="true">Tee</button><button data-cam="top" aria-pressed="false">Boven</button><button data-cam="green" aria-pressed="false">Green</button>
       </div>
@@ -886,7 +886,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div><b id="dB">–</b><span>Achter</span></div>
       </div>
       <ul id="hz" class="hz"></ul>
-      <div class="gpsbar">
+      <div class="gpsbar" hidden>
         <button id="gpsBtn" class="btn primary">Start GPS</button>
         <button id="markBtn" class="btn">Markeer green</button>
         <button id="shotBtn" class="btn">Meet slag</button>
@@ -919,7 +919,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <p class="note" style="margin:0">Playing handicap = HCP × slope ÷ 113 + (course rating − 73), afgerond, × percentage.</p>
     </div>
 
-    <div class="pcard">
+    <div class="pcard" hidden>
       <div class="pcard-h"><h3>Baanligging</h3></div>
       <p id="osmStatus" class="note" style="margin:0"></p>
       <div class="grid2"><button id="osmBtn" class="btn primary">Ophalen (OpenStreetMap)</button><button id="osmClear" class="btn">Wis baanligging</button></div>
@@ -933,7 +933,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <button id="greensClear" class="btn">Wis ingemeten greens</button>
     </div>
 
-    <div class="pcard">
+    <div class="pcard" hidden>
       <div class="pcard-h"><h3>Eigen inmeting</h3></div>
       <p id="markStatus" class="note" style="margin:0"></p>
       <div class="grid2"><button id="markExport" class="btn">Bewaar als bestand</button><label class="btn" for="markFile" style="display:grid;place-items:center">Laad bestand</label></div>
@@ -948,7 +948,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <span id="newConfirm" hidden><button id="newYes" class="btn primary">Ja, wis scores</button> <button id="newNo" class="btn">Annuleer</button></span></div>
     </div>
 
-    <div class="pcard about">
+    <div class="pcard about" hidden>
       <div class="pcard-h"><h3 style="color:var(--ink)">Over GPS en baanligging</h3></div>
       <p>GPS-afstanden en het ophalen van de echte baanligging hebben toegang tot je locatie en het internet nodig. Binnen de Claude-app krijgt deze pagina die toegang niet. Open daarom de losse versie (bleijenbeek-scorekaart.html) via https in Safari en zet hem op je beginscherm.</p><p>Vraagt Safari niets en krijg je toch een weigering? Zet dan aan: Instellingen → Privacy en beveiliging → Locatievoorzieningen (aan) → Safari-websites → Bij gebruik van app. Controleer ook Instellingen → Apps → Safari → Locatie → Vraag of Sta toe.</p>
       <p>Zonder baanligging is elke hole een schematische weergave op basis van de scorekaart en de baankaart. Afstanden vanaf de tee zijn dan benaderingen; met <em>Markeer green</em> leg je per hole het greenmidden zelf vast.</p>
@@ -1525,7 +1525,7 @@ const REAL={cache:{},tok:0,d:null,ex:1.5};
 function srcText(){const el=$('#src');if(!el||!MODEL)return;
   if(G.isReal&&REAL.d)el.textContent=(REAL.d.overview?'Hele baan · ':'')+'Luchtfoto PDOK + hoogte AHN';
   else if(G.real&&REAL.loading)el.textContent='Luchtfoto en hoogtekaart laden…';
-  else el.textContent={osm:'Echte ligging (OSM)',mark:'Eigen inmeting',grid:'Echte hole · AHN + luchtfoto',plan:(MODEL&&MODEL.T?'Holetekening · GPS gekoppeld':'Holetekening Bleijenbeek'),schem:'Schematisch · meet in via Kaart'}[MODEL.src];}
+  else el.textContent={osm:'Echte ligging (OSM)',mark:'Eigen inmeting',grid:'Echte hole · AHN + luchtfoto',plan:'Holetekening Bleijenbeek',schem:'Schematisch · meet in via Kaart'}[MODEL.src];}
 function rd(lat,lon){const p=0.36*(lat-52.15517440),l=0.36*(lon-5.38720621);
   const x=155000+190094.945*l-11832.228*p*l-114.221*p*p*l-32.391*l*l*l-0.705*p-2.340*p*p*p*l-0.608*p*l*l*l-0.008*l*l+0.148*p*p*l*l*l;
   const y=463000+309056.544*p+3638.893*l*l+73.077*p*p-157.984*p*l*l+59.788*p*p*p+0.433*l-6.439*p*p*l*l-0.032*p*l+0.092*l*l*l*l-0.054*p*l*l*l*l;return[x,y];}
@@ -1706,7 +1706,7 @@ new MutationObserver(()=>build3D()).observe(document.documentElement,{attributes
 G.real=false;if(S.mode==='real')S.mode='3d';
 init3D();renderHeader();refreshHole();showTab(S.tab||'hole');
 document.querySelectorAll('.stage-mode button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode==='3d'));
-if(S.mode==='sat')setTimeout(()=>setMode('sat'),50);
+S.mode='3d';
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(G.lab)updDist();});
 })();
 </script>
