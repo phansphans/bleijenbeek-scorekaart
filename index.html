@@ -861,7 +861,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <canvas id="gl" aria-label="3D-weergave van de hole"></canvas>
       <div id="sat" hidden></div>
       <div class="stage-src" id="src"></div>
-      <div class="stage-mode" role="group" aria-label="Weergave"><button data-mode="3d" aria-pressed="true">3D</button><button data-mode="sat" aria-pressed="false">Satelliet</button></div>
+      <div class="stage-mode" role="group" aria-label="Weergave"><button data-mode="real" aria-pressed="true">Foto-3D</button><button data-mode="3d" aria-pressed="false">Schema</button><button data-mode="sat" aria-pressed="false">Kaart</button></div>
       <div class="stage-top" id="camTop" role="group" aria-label="Camerastandpunt">
         <button data-cam="tee" aria-pressed="true">Tee</button><button data-cam="top" aria-pressed="false">Boven</button><button data-cam="green" aria-pressed="false">Green</button>
       </div>
@@ -964,6 +964,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
 <script>
 (function(){
 'use strict';
@@ -1202,7 +1203,7 @@ function marksModel(n){
   if(h.par>3){const y0=Math.max(90,len*0.3),y1=Math.min(len-24,cy-depth-6),lft=[],rgt=[];
     for(let y=y0;y<=y1;y+=8){const w=15+3*Math.sin(y/37+n);lft.push([-w,y]);rgt.push([w*.95,y]);}
     if(lft.length>1)feats.push({k:'fairway',pts:lft.concat(rgt.reverse())});}
-  (mk.hz||[]).forEach(z=>{if(z.c&&z.c.length>=3)feats.push({k:z.k,pts:z.c.map(T)});});
+  (mk.hz||[]).forEach(z=>{if(z.c&&z.c.length>=3)feats.push({k:z.k,pts:z.c.map(T),ll:centroid(z.c)});});
   return{src:'mark',L:len,cx:()=>0,feats,green:{c:[0,len],pts:blob(0,cy,wid,depth,n*7+3,32)},gfb:{f:gf,m:[0,len],b:gb},tees:[],T,origin:o};
 }
 let MODEL=null;
@@ -1229,7 +1230,7 @@ function updDist(){
     f.pts.forEach(v=>{const a=(v[0]-P[0])*u[0]+(v[1]-P[1])*u[1],l=(v[0]-P[0])*rr[0]+(v[1]-P[1])*rr[1];if(Math.abs(l)<70)clos=true;mn=Math.min(mn,a);mx=Math.max(mx,a);lat+=l;cnt++;});
     if(!clos||mx<5||mn>Lg+25)return;
     const c=centroid(f.pts),gs=Math.hypot(c[0]-C[0],c[1]-C[1])<28&&f.k==='bunker';
-    list.push({k:f.k,name:f.name||(f.k==='water'?'Water':gs?'Greenbunker':'Bunker'),side:sideName(lat/cnt),tot:Math.max(0,mn),over:mx,pt:[c[0],c[1]]});});
+    list.push({k:f.k,name:f.name||(f.k==='water'?'Water':gs?'Greenbunker':'Bunker'),side:sideName(lat/cnt),tot:Math.max(0,mn),over:mx,pt:[c[0],c[1]],ll:f.ll});});
   list.sort((a,b)=>a.tot-b.tot);
   $('#hz').innerHTML=!showHz?'<li><span class="empty">Hindernisafstanden zijn alleen beschikbaar met echte baanligging.</span></li>':
     list.length?list.map(z=>`<li><span class="k k-${z.k}"></span><span><span class="nm">${z.name}</span> <span class="sd">${z.side}</span></span><span class="d">${z.tot<1?'<small>ernaast</small> ':''}${z.tot>=1?Math.round(z.tot):''}${z.tot>=1?'<small> tot · </small>':''}${Math.round(z.over)}<small> over</small></span></li>`).join(''):
@@ -1325,7 +1326,9 @@ function label(text,bg,fg){const cv=document.createElement('canvas'),W=320,Hh=11
   const t=new THREE.CanvasTexture(cv);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true,sizeAttenuation:false}));
   s.center.set(.5,0);s.scale.set(.15,.0525,1);s.renderOrder=10;return s;}
 function build3D(){
-  if(!G.ok||!MODEL)return;const m=MODEL,old=G.sc;
+  if(!G.ok||!MODEL)return;
+  if(G.real&&!IN_CLAUDE&&window.GeoTIFF){buildReal();return;}
+  G.isReal=false;const m=MODEL,old=G.sc;
   const sc=new THREE.Scene(),sky=new THREE.Color(tok('--sky'));sc.background=sky;sc.fog=new THREE.Fog(sky,m.L*1.2+150,m.L*3+600);
   sc.add(new THREE.HemisphereLight(0xffffff,0x3b4a30,0.9));const dl=new THREE.DirectionalLight(0xffffff,0.7);dl.position.set(-250,400,200);sc.add(dl);
   const ground=new THREE.Mesh(new THREE.PlaneGeometry(6000,6000),lam(tok('--g-rough')));ground.rotation.x=-Math.PI/2;ground.position.y=-0.3;sc.add(ground);
@@ -1364,6 +1367,7 @@ function build3D(){
   G.sc=sc;disposeScene(old);setCam(G.view||'tee');
 }
 function labels3D(P,list,me){
+  if(G.isReal){labelsReal(list);return;}
   if(!G.ok||!G.lab||!MODEL)return;
   G.lab.children.slice().forEach(c=>{G.lab.remove(c);c.material.map.dispose();c.material.dispose();});
   const gc=MODEL.green.c,dg=Math.round(Math.hypot(gc[0]-P[0],gc[1]-P[1]));
@@ -1377,7 +1381,7 @@ function labels3D(P,list,me){
   req();
 }
 function cam(){const V=G.V,c=Math.cos(V.pitch);G.cam.position.set(V.tx+Math.sin(V.yaw)*c*V.R,Math.sin(V.pitch)*V.R,V.tz+Math.cos(V.yaw)*c*V.R);G.cam.lookAt(V.tx,0,V.tz);req();}
-function setCam(kind){const m=MODEL;if(!m||!G.ok)return;G.view=kind;const gc=m.green.c;
+function setCam(kind){if(G.isReal){setCamReal(kind);return;}const m=MODEL;if(!m||!G.ok)return;G.view=kind;const gc=m.green.c;
   if(kind==='top')G.V={yaw:0,pitch:1.5,R:m.L*1.25+80,tx:m.cx(m.L/2),tz:-m.L/2};
   else if(kind==='green')G.V={yaw:0,pitch:.55,R:90,tx:gc[0],tz:-gc[1]+12};
   else G.V={yaw:0,pitch:.4,R:Math.max(150,m.L*.74),tx:m.cx(m.L*.55),tz:-m.L*.55};
@@ -1394,10 +1398,99 @@ function bindPointers(el){const pts=new Map();let pd=0;
   el.addEventListener('wheel',e=>{e.preventDefault();G.V.R=clamp(G.V.R*(1+e.deltaY*0.001),25,3500);cam();},{passive:false});}
 
 function refreshHole(){buildModel();
-  $('#src').textContent={osm:'Echte ligging (OSM)',mark:'Eigen inmeting',schem:'Schematisch'}[MODEL.src];
+  srcText();
   $('#src').hidden=SAT.on;
   const real=MODEL.src!=='schem';$('#markBtn').hidden=real;$('.gpsbar').style.gridTemplateColumns=real?'1fr 1fr':'';
   build3D();updDist();if(SAT.on){SAT.meas=null;drawSat();fitHole();}}
+
+/* ---------- Foto-3D: PDOK-luchtfoto over AHN ---------- */
+G.real=!IN_CLAUDE;G.isReal=false;
+const REAL={cache:{},tok:0,d:null,ex:1.5};
+function srcText(){const el=$('#src');if(!el||!MODEL)return;
+  if(G.isReal&&REAL.d)el.textContent=(REAL.d.overview?'Hele baan · ':'')+'Luchtfoto PDOK + hoogte AHN';
+  else if(G.real&&REAL.loading)el.textContent='Luchtfoto en hoogtekaart laden…';
+  else el.textContent={osm:'Echte ligging (OSM)',mark:'Eigen inmeting',schem:'Schematisch'}[MODEL.src];}
+function rd(lat,lon){const p=0.36*(lat-52.15517440),l=0.36*(lon-5.38720621);
+  const x=155000+190094.945*l-11832.228*p*l-114.221*p*p*l-32.391*l*l*l-0.705*p-2.340*p*p*p*l-0.608*p*l*l*l-0.008*l*l+0.148*p*p*l*l*l;
+  const y=463000+309056.544*p+3638.893*l*l+73.077*p*p-157.984*p*l*l+59.788*p*p*p+0.433*l-6.439*p*p*l*l-0.032*p*l+0.092*l*l*l*l-0.054*p*l*l*l*l;return[x,y];}
+function realBox(){const mk=MARKS[S.hole];
+  if(mk&&mk.tee&&mk.gm){const pts=[mk.tee,mk.gm,mk.gf,mk.gb].filter(Boolean).concat(...(mk.hz||[]).map(z=>z.c)).map(p=>rd(p[0],p[1]));
+    let x0=Math.min(...pts.map(p=>p[0])),x1=Math.max(...pts.map(p=>p[0])),y0=Math.min(...pts.map(p=>p[1])),y1=Math.max(...pts.map(p=>p[1]));
+    const pad=70;x0-=pad;x1+=pad;y0-=pad;y1+=pad;const w=x1-x0,h=y1-y0,m=Math.max(w,h,260);
+    const cx=(x0+x1)/2,cy=(y0+y1)/2;const W=Math.max(w,m*.55),H=Math.max(h,m*.55);
+    return{box:[Math.round(cx-W/2),Math.round(cy-H/2),Math.round(cx+W/2),Math.round(cy+H/2)],overview:false};}
+  const a=rd(COURSE_BOUNDS[0][0],COURSE_BOUNDS[0][1]),b=rd(COURSE_BOUNDS[1][0],COURSE_BOUNDS[1][1]);
+  return{box:[Math.round(a[0]-60),Math.round(a[1]-60),Math.round(b[0]+60),Math.round(b[1]+60)],overview:true};}
+function fillGrid(a,nx,ny){const ok=v=>v>-50&&v<400;let pass=0,left=1;
+  while(left&&pass<120){left=0;pass++;const b=a.slice();
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const k=j*nx+i;if(ok(a[k]))continue;let s=0,n=0;
+      if(i>0&&ok(a[k-1])){s+=a[k-1];n++}if(i<nx-1&&ok(a[k+1])){s+=a[k+1];n++}if(j>0&&ok(a[k-nx])){s+=a[k-nx];n++}if(j<ny-1&&ok(a[k+nx])){s+=a[k+nx];n++}
+      if(n)b[k]=s/n;else left++;}
+    a.set(b);}
+  for(let k=0;k<a.length;k++)if(!ok(a[k]))a[k]=10;return a;}
+async function fetchTiff(cov,box,nx,ny){const u='https://service.pdok.nl/rws/ahn/wcs/v1_0?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&FORMAT=image/tiff&COVERAGEID='+cov+
+  `&SUBSET=x(${box[0]},${box[2]})&SUBSET=y(${box[1]},${box[3]})&SCALESIZE=x(${nx}),y(${ny})`;
+  const r=await fetch(u);if(!r.ok)throw new Error('AHN '+r.status);const t=await GeoTIFF.fromArrayBuffer(await r.arrayBuffer());const im=await t.getImage();
+  const [d]=await im.readRasters();return{d:Float32Array.from(d),w:im.getWidth(),h:im.getHeight()};}
+async function fetchPhoto(box,pw,ph){const u='https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=Actueel_orthoHR&STYLES=&CRS=EPSG:28992'+
+  `&BBOX=${box.join(',')}&WIDTH=${pw}&HEIGHT=${ph}&FORMAT=image/jpeg`;
+  const r=await fetch(u);if(!r.ok)throw new Error('luchtfoto '+r.status);const url=URL.createObjectURL(await r.blob());
+  const img=new Image();img.src=url;await img.decode();return img;}
+async function loadReal(rb){const key=rb.box.join(',');if(REAL.cache[key])return REAL.cache[key];
+  const box=rb.box,w=box[2]-box[0],h=box[3]-box[1],cell=Math.max(1,Math.max(w,h)/(rb.overview?360:300));
+  const nx=Math.round(w/cell)+1,ny=Math.round(h/cell)+1,sc=Math.min(2048/Math.max(w,h),4),pw=Math.round(w*sc),ph=Math.round(h*sc);
+  const [dtm,dsm,img]=await Promise.all([fetchTiff('dtm_05m',box,nx,ny),fetchTiff('dsm_05m',box,nx,ny),fetchPhoto(box,pw,ph)]);
+  const NX=dtm.w,NY=dtm.h;fillGrid(dtm.d,NX,NY);
+  const surf=new Float32Array(NX*NY);let mn=1e9;for(let k=0;k<NX*NY;k++)mn=Math.min(mn,dtm.d[k]);
+  for(let k=0;k<NX*NY;k++){const g=dtm.d[k],v=dsm.d[k];const t=(v>-50&&v<400)?Math.max(0,Math.min(35,v-g)):0;surf[k]=(g-mn)*REAL.ex+(t>1.2?t:0);}
+  const d={box,nx:NX,ny:NY,surf,ground:dtm.d.map(g=>(g-mn)*REAL.ex),img,overview:rb.overview,w,h};REAL.cache[key]=d;return d;}
+function hAt(d,X,Y,ground){const gx=(X-d.box[0])/d.w*(d.nx-1),gy=(d.box[3]-Y)/d.h*(d.ny-1);const i=clamp(Math.floor(gx),0,d.nx-2),j=clamp(Math.floor(gy),0,d.ny-2),fx=clamp(gx-i,0,1),fy=clamp(gy-j,0,1);
+  const a=ground?d.ground:d.surf,k=j*d.nx+i;return a[k]*(1-fx)*(1-fy)+a[k+1]*fx*(1-fy)+a[k+d.nx]*(1-fx)*fy+a[k+d.nx+1]*fx*fy;}
+function wpos(d,lat,lon,ground){const p=rd(lat,lon),cx=(d.box[0]+d.box[2])/2,cy=(d.box[1]+d.box[3])/2;return new THREE.Vector3(p[0]-cx,hAt(d,p[0],p[1],ground),-(p[1]-cy));}
+async function buildReal(){
+  const my=++REAL.tok,rb=realBox();REAL.loading=true;srcText();
+  if(!G.isReal){G.isReal=false;}
+  let d;try{d=await loadReal(rb);}catch(e){REAL.loading=false;if(my!==REAL.tok)return;G.real=false;
+    document.querySelectorAll('.stage-mode button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode==='3d'));
+    gpsMsg('Luchtfoto of hoogtekaart kon niet laden ('+e.message+'). Je ziet de schematische weergave.');build3D();updDist();return;}
+  REAL.loading=false;if(my!==REAL.tok)return;REAL.d=d;
+  const old=G.sc,sc=new THREE.Scene(),sky=new THREE.Color(tok('--sky'));sc.background=sky;const big=Math.max(d.w,d.h);sc.fog=new THREE.Fog(sky,big*1.2,big*3.5);
+  sc.add(new THREE.HemisphereLight(0xffffff,0x556644,0.95));const dl=new THREE.DirectionalLight(0xffffff,0.45);dl.position.set(-300,500,250);sc.add(dl);
+  const geo=new THREE.PlaneGeometry(d.w,d.h,d.nx-1,d.ny-1),pos=geo.attributes.position;for(let k=0;k<d.nx*d.ny;k++)pos.setZ(k,d.surf[k]);
+  geo.computeVertexNormals();const tex=new THREE.Texture(d.img);tex.needsUpdate=true;tex.anisotropy=Math.min(8,G.r.capabilities.getMaxAnisotropy());
+  const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({map:tex}));mesh.rotation.x=-Math.PI/2;sc.add(mesh);
+  // rand/sokkel
+  const base=new THREE.Mesh(new THREE.PlaneGeometry(big*8,big*8),lam(tok('--g-rough')));base.rotation.x=-Math.PI/2;base.position.y=-0.6;sc.add(base);
+  const mk=MARKS[S.hole];
+  if(mk&&mk.gm&&!d.overview){const g=wpos(d,mk.gm[0],mk.gm[1],true);
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,7,8),lam('#eeeeee'));pole.position.set(g.x,g.y+3.5,g.z);sc.add(pole);
+    const fg=new THREE.BufferGeometry();fg.setAttribute('position',new THREE.Float32BufferAttribute([0,7,0,0,5.2,0,3.2,6.1,0],3));
+    const fl=new THREE.Mesh(fg,new THREE.MeshBasicMaterial({color:new THREE.Color(tok('--flag')),side:THREE.DoubleSide}));fl.position.set(g.x,g.y,g.z);sc.add(fl);REAL.green=g;}
+  else REAL.green=null;
+  if(mk&&mk.tee&&!d.overview){const t=wpos(d,mk.tee[0],mk.tee[1],true);[-2,2].forEach(dx=>{const b=new THREE.Mesh(new THREE.SphereGeometry(.7,12,8),lam(tok('--t-'+refTee())));b.position.set(t.x+dx,t.y+.7,t.z);sc.add(b);});REAL.tee=t;}
+  else REAL.tee=null;
+  (mk&&!d.overview?mk.hz||[]:[]).forEach(z=>{const pts=z.c.concat([z.c[0]]).map(c=>{const v=wpos(d,c[0],c[1],true);v.y+=.35;return v;});
+    sc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:z.k==='water'?0x7fc6ff:0xfff2c2})));});
+  G.lab=new THREE.Group();sc.add(G.lab);G.me=null;G.sc=sc;G.isReal=true;disposeScene(old);srcText();setCamReal(G.view||'tee');updDist();
+  if(d.overview)gpsMsg('Hele baan in 3D. Meet hole '+S.hole+' in (Kaart → Inmeten) voor een close-up van de hole.');}
+function setCamReal(kind){const d=REAL.d;if(!d)return;G.view=kind;const big=Math.max(d.w,d.h);
+  document.querySelectorAll('#camTop button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cam===kind));
+  const T=REAL.tee,Gr=REAL.green;
+  if(T&&Gr){const dx=T.x-Gr.x,dz=T.z-Gr.z,L=Math.hypot(dx,dz)||1,yaw=Math.atan2(dx,dz);
+    if(kind==='top')G.V={yaw,pitch:1.5,R:L*1.3+60,tx:(T.x+Gr.x)/2,tz:(T.z+Gr.z)/2};
+    else if(kind==='green')G.V={yaw,pitch:.5,R:70,tx:Gr.x,tz:Gr.z};
+    else G.V={yaw,pitch:.36,R:Math.max(140,L*.72),tx:T.x+(Gr.x-T.x)*.55,tz:T.z+(Gr.z-T.z)*.55};}
+  else G.V={yaw:.6,pitch:kind==='top'?1.5:.6,R:big*(kind==='top'?1.1:.85),tx:0,tz:0};
+  cam();}
+function labelsReal(list){if(!G.lab||!REAL.d)return;const d=REAL.d;
+  G.lab.children.slice().forEach(c=>{G.lab.remove(c);if(c.material){if(c.material.map)c.material.map.dispose();c.material.dispose();}});
+  if(REAL.green){const v=$('#dM').textContent.replace(/[^0-9≈]/g,'');const g=label(v+' m',tok('--accent'),tok('--accent-ink'));g.position.set(REAL.green.x,REAL.green.y+8,REAL.green.z);G.lab.add(g);}
+  list.slice(0,6).forEach(z=>{if(!z.ll)return;const p=wpos(d,z.ll[0],z.ll[1],true);const s=label(z.tot<1?Math.round(z.over)+'':Math.round(z.tot)+'',z.k==='water'?'rgba(20,60,95,.88)':'rgba(70,58,25,.88)','#ffffff');
+    s.scale.set(.11,.0385,1);s.position.set(p.x,p.y+2,p.z);G.lab.add(s);});
+  if(G.me){G.sc.remove(G.me);G.me=null;}
+  if(GPS){const p=rd(GPS.lat,GPS.lon);if(p[0]>d.box[0]&&p[0]<d.box[2]&&p[1]>d.box[1]&&p[1]<d.box[3]){const v=wpos(d,GPS.lat,GPS.lon,true);
+    const b=new THREE.Mesh(new THREE.SphereGeometry(1.8,16,12),new THREE.MeshBasicMaterial({color:0x1d6fe0}));b.position.set(v.x,v.y+2,v.z);G.sc.add(b);G.me=b;}}
+  req();}
 
 /* ---------- Satelliet ---------- */
 const SAT={map:null,on:false,edit:null,draft:[],meas:null,clr:0};
@@ -1411,10 +1504,10 @@ function initSat(){
   SAT.base=L.layerGroup().addTo(SAT.map);SAT.top=L.layerGroup().addTo(SAT.map);
   SAT.map.on('click',onSatTap);return true;}
 function setMode(mode){
-  const sat=mode==='sat';
+  const sat=mode==='sat';if(!sat){const r=mode==='real';if(r!==G.real||G.isReal!==r){G.real=r;S.mode=mode;save();build3D();updDist();}}else{S.mode='sat';save();}
   if(sat&&!initSat()){gpsMsg('De kaartbibliotheek kon niet laden. Controleer je internetverbinding.');return;}
   SAT.on=sat;document.querySelectorAll('.stage-mode button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===mode));
-  $('#sat').hidden=!sat;$('#gl').hidden=sat||!G.ok;$('#camTop').hidden=sat;$('#hint3d').hidden=sat;$('#satTop').hidden=!sat;$('#src').hidden=sat;
+  $('#sat').hidden=!sat;$('#gl').hidden=sat||!G.ok;$('#camTop').hidden=sat;$('#hint3d').hidden=sat;$('#satTop').hidden=!sat;$('#src').hidden=sat;if(!sat)srcText();
   if(!sat){setEdit(null);$('#meas').hidden=true;SAT.meas=null;resize3D();}
   else{SAT.map.invalidateSize();drawSat();fitHole();
     if(IN_CLAUDE)gpsMsg('Satellietfoto’s laden alleen in je Netlify-versie, niet in de Claude-app.');}}
@@ -1456,7 +1549,7 @@ function onSatTap(e){const ll=[+e.latlng.lat.toFixed(7),+e.latlng.lng.toFixed(7)
   if(SAT.edit==='bunker'||SAT.edit==='water'){SAT.draft.push(ll);drawSat();return;}
   mk[SAT.edit]=ll;saveMarks();const nx=NEXT[SAT.edit];if(nx)SAT.edit=nx;refreshAfterMark();}
 function refreshAfterMark(){buildModel();build3D();updDist();drawSat();renderPlayersLite();
-  $('#src').textContent={osm:'Echte ligging (OSM)',mark:'Eigen inmeting',schem:'Schematisch'}[MODEL.src];
+  srcText();
   const real=MODEL.src!=='schem';$('#markBtn').hidden=real;$('.gpsbar').style.gridTemplateColumns=real?'1fr 1fr':'';}
 function setEdit(k){if(SAT.draft.length>=3)finishShape();SAT.draft=[];SAT.edit=k;$('#editPanel').hidden=!k;$('#editBtn').setAttribute('aria-pressed',!!k);
   if(k){SAT.meas=null;$('#meas').hidden=true;}SAT.clr=0;drawSat();}
@@ -1494,7 +1587,10 @@ try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',
 new MutationObserver(()=>build3D()).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 /* ---------- Start ---------- */
+if(S.mode==='3d')G.real=false;
 init3D();renderHeader();refreshHole();showTab(S.tab||'hole');
+document.querySelectorAll('.stage-mode button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===(G.real?'real':'3d')));
+if(S.mode==='sat')setTimeout(()=>setMode('sat'),50);
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(G.lab)updDist();});
 })();
 </script>
