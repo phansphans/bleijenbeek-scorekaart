@@ -1102,7 +1102,7 @@ function renderPlayers(){
   $('#addP').hidden=S.players.length>=4;
   $('#allow').value=String(S.allow);
   const nh=OSM&&OSM.holes?Object.keys(OSM.holes).length:0;
-  $('#osmStatus').textContent=OSM?`Opgeslagen: ${nh} van 18 holes met echte ligging, ${OSM.feats.length} baanobjecten.${nh<18?' Overige holes blijven schematisch.':''}`:'Nog niet opgehaald. Alle holes zijn schematisch.';
+  $('#osmStatus').textContent=OSM?`Opgeslagen: ${nh} van 18 holes met echte ligging, ${OSM.feats.length} baanobjecten.${nh<18?' Overige holes blijven schematisch.':''}`:'OpenStreetMap kent van Bleijenbeek (gecontroleerd oktober 2026) alleen de buitengrens en de driving range, geen greens, bunkers of holes. Meet de holes daarom zelf in via Satelliet → Inmeten.';
   $('#osmClear').disabled=!OSM;
   const ng=Object.keys(GREENS).length;$('#greenStatus').textContent=ng?`${ng} green${ng>1?'s':''} zelf ingemeten.`:'Nog geen greens ingemeten.';
   $('#greensClear').disabled=!ng;
@@ -1401,12 +1401,12 @@ function refreshHole(){buildModel();
 
 /* ---------- Satelliet ---------- */
 const SAT={map:null,on:false,edit:null,draft:[],meas:null,clr:0};
-const COURSE=[51.637,6.043];
+const COURSE=[51.635,6.054],COURSE_BOUNDS=[[51.6296,6.0388],[51.6403,6.0690]];
 const KINDS=[['tee','Tee'],['gf','Green voor'],['gm','Green midden'],['gb','Green achter'],['bunker','Bunker'],['water','Water']];
 const NEXT={tee:'gf',gf:'gm',gm:'gb',gb:'bunker'};
 function initSat(){
   if(SAT.map)return true;if(!window.L)return false;
-  SAT.map=L.map('sat',{zoomControl:false,attributionControl:true,maxZoom:21}).setView(COURSE,16);
+  SAT.map=L.map('sat',{zoomControl:false,attributionControl:true,maxZoom:21}).fitBounds(COURSE_BOUNDS);
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:19,maxZoom:21,attribution:'Esri, Maxar, Earthstar Geographics'}).addTo(SAT.map);
   SAT.base=L.layerGroup().addTo(SAT.map);SAT.top=L.layerGroup().addTo(SAT.map);
   SAT.map.on('click',onSatTap);return true;}
@@ -1426,7 +1426,8 @@ function fitHole(){if(!SAT.map)return;const mk=MARKS[S.hole],pts=[];
   if(pts.length>=2)SAT.map.fitBounds(pts,{padding:[40,40],maxZoom:19});
   else if(pts.length===1)SAT.map.setView(pts[0],18);
   else if(GPS)SAT.map.setView([GPS.lat,GPS.lon],18);
-  else SAT.map.setView(COURSE,16);}
+  else SAT.map.fitBounds(COURSE_BOUNDS,{padding:[10,10]});
+  if(!(mk&&mk.tee)&&!SAT.edit)gpsMsg('Hole '+S.hole+' is nog niet ingemeten. Zoom in op de hole en tik op Inmeten.');}
 function css(n){return tok(n);}
 function drawSat(){if(!SAT.map)return;SAT.base.clearLayers();const mk=MARKS[S.hole]||{hz:[]};
   (mk.hz||[]).forEach(z=>{L.polygon(z.c,{color:z.k==='water'?'#7fc6ff':'#fff2c2',weight:2,fillColor:z.k==='water'?'#2a7fc0':'#e9dcae',fillOpacity:.45,interactive:false}).addTo(SAT.base);});
